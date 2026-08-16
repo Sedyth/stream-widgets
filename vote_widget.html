@@ -5,19 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Twitch Light Vote Widget</title>
     
-    <!-- Usando EXACTAMENTE el mismo enlace que usa tu Perrito -->
     <script src="https://cdn.jsdelivr.net/npm/tmi.js/dist/tmi.min.js"></script>
     
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@700;900&display=swap');
         body { margin: 0; padding: 20px; font-family: 'Montserrat', sans-serif; color: white; background-color: transparent; text-transform: uppercase; }
         
-        /* Debug Console Style */
-        #debug-log {
-            background: rgba(0, 0, 0, 0.9); color: #00ff00; font-family: monospace; font-size: 14px;
-            padding: 10px; border-radius: 5px; width: 600px; margin-bottom: 20px; display: none; text-transform: none;
-        }
-
+        #debug-log { background: rgba(0, 0, 0, 0.9); color: #00ff00; font-family: monospace; font-size: 14px; padding: 10px; border-radius: 5px; width: 600px; margin-bottom: 20px; display: block; text-transform: none; }
         #widget-container { width: 600px; background: rgba(0, 0, 0, 0.7); border-radius: 15px; padding: 20px; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5); display: none; }
         #header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
         #title { font-size: 20px; font-weight: 900; letter-spacing: 2px; }
@@ -32,7 +26,6 @@
 </head>
 <body>
 
-    <!-- Consola de depuración en pantalla -->
     <div id="debug-log">INICIANDO SISTEMA...<br></div>
 
     <div id="widget-container">
@@ -42,53 +35,62 @@
     </div>
 
     <script>
+        // --- CONFIG ---
         const TWITCH_CHANNEL = 'sedyth'; 
-        const VOTE_TIME_SECONDS = 15; // Está en 15 segundos para hacer pruebas rápidas
+        const VOTE_TIME_SECONDS = 15; // 15 seconds for testing
         
-        // --- ON-SCREEN LOGGER ---
         const logWindow = document.getElementById('debug-log');
-        logWindow.style.display = 'block'; // Mostrar depuración
         function printLog(msg) {
             logWindow.innerHTML += msg + "<br>";
-            console.log(msg); // También lo mandamos a la consola oculta por si acaso
+            console.log(msg);
         }
 
-        if (typeof tmi === 'undefined') {
-            printLog("❌ ERROR: La librería de Twitch no cargó.");
-        } else {
-            printLog("✅ Librería de Twitch cargada.");
-        }
+        if (typeof tmi === 'undefined') printLog("❌ ERROR: La librería de Twitch no cargó.");
+        else printLog("✅ Librería de Twitch cargada.");
 
         let votesRed = 0; let votesGreen = 0; let timeRemaining = VOTE_TIME_SECONDS;
         let timerInterval; let isVotingActive = false; let voters = new Set();
+        let sbWebSocket = null;
 
-        // --- CONEXIÓN AL SERVIDOR WEBSOCKET (Estilo Perrito) ---
-        const sbWebSocket = new WebSocket('ws://localhost:8080/');
-        
-        sbWebSocket.onopen = () => printLog("✅ Conectado a Streamer.bot correctamente!");
-        sbWebSocket.onerror = (error) => printLog("❌ Error de Streamer.bot WebSocket! ¿Está encendido?");
+        // --- STREAMER.BOT WEBSOCKET WITH AUTO-RECONNECT ---
+        function connectStreamerBot() {
+            sbWebSocket = new WebSocket('ws://localhost:8080/');
+            
+            sbWebSocket.onopen = () => {
+                printLog("✅ Conectado a Streamer.bot correctamente!");
+            };
+            
+            sbWebSocket.onerror = (error) => {
+                // We keep this quiet so it doesn't spam the screen during reconnects
+            };
+
+            sbWebSocket.onclose = () => {
+                printLog("⚠️ Streamer.bot no detectado. Reintentando en 3 segundos...");
+                setTimeout(connectStreamerBot, 3000);
+            };
+        }
+
+        // Start the connection process
+        connectStreamerBot();
 
         function triggerStreamerbot(winner) {
             const actionName = winner === 'Red' ? 'LightsRed' : 'LightsGreen';
             printLog(`Enviando señal a Streamer.bot: ${actionName}...`);
-            if (sbWebSocket.readyState === WebSocket.OPEN) {
-                // Le decimos a Streamer.bot que ejecute la acción
+            if (sbWebSocket && sbWebSocket.readyState === WebSocket.OPEN) {
                 sbWebSocket.send(JSON.stringify({ 
                     request: 'DoAction', 
                     action: { name: actionName }, 
                     id: 'LightVoteWidget' 
                 }));
                 printLog(`✅ ¡Señal enviada a Streamer.bot!`);
+            } else {
+                printLog(`❌ No se pudo enviar. Streamer.bot desconectado.`);
             }
         }
 
-        // --- CONEXIÓN AL CHAT DE TWITCH ---
+        // --- TWITCH CHAT ---
         const client = new tmi.Client({ channels: [ TWITCH_CHANNEL ] });
-        
-        client.on('connected', (address, port) => {
-            printLog(`✅ Conectado al chat de: ${TWITCH_CHANNEL}`);
-        });
-
+        client.on('connected', () => printLog(`✅ Conectado al chat de: ${TWITCH_CHANNEL}`));
         client.connect().catch(console.error);
 
         client.on('message', (channel, tags, message, self) => {
@@ -109,9 +111,7 @@
                 return;
             }
 
-            if (isVotingActive) {
-                if (voters.has(username)) return;
-
+            if (isVotingActive && !voters.has(username)) {
                 if (command === '!red') {
                     votesRed++; voters.add(username); updateUI();
                 } else if (command === '!green') {
