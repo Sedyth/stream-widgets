@@ -4,10 +4,20 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Twitch Light Vote Widget</title>
-    <script src="https://cdn.jsdelivr.net/npm/tmi.js@1.8.5/dist/tmi.min.js"></script>
+    
+    <!-- Usando EXACTAMENTE el mismo enlace que usa tu Perrito -->
+    <script src="https://cdn.jsdelivr.net/npm/tmi.js/dist/tmi.min.js"></script>
+    
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@700;900&display=swap');
         body { margin: 0; padding: 20px; font-family: 'Montserrat', sans-serif; color: white; background-color: transparent; text-transform: uppercase; }
+        
+        /* Debug Console Style */
+        #debug-log {
+            background: rgba(0, 0, 0, 0.9); color: #00ff00; font-family: monospace; font-size: 14px;
+            padding: 10px; border-radius: 5px; width: 600px; margin-bottom: 20px; display: none; text-transform: none;
+        }
+
         #widget-container { width: 600px; background: rgba(0, 0, 0, 0.7); border-radius: 15px; padding: 20px; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5); display: none; }
         #header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
         #title { font-size: 20px; font-weight: 900; letter-spacing: 2px; }
@@ -22,47 +32,61 @@
 </head>
 <body>
 
+    <!-- Consola de depuración en pantalla -->
+    <div id="debug-log">INICIANDO SISTEMA...<br></div>
+
     <div id="widget-container">
-        <div id="header">
-            <div id="title">Light Color Vote!</div>
-            <div id="timer">02:00</div>
-        </div>
-        <div id="bar-container">
-            <div id="bar-red"></div>
-            <div id="bar-green"></div>
-        </div>
-        <div id="labels">
-            <div id="label-red">!RED - 0</div>
-            <div id="label-green">!GREEN - 0</div>
-        </div>
+        <div id="header"><div id="title">Light Color Vote!</div><div id="timer">02:00</div></div>
+        <div id="bar-container"><div id="bar-red"></div><div id="bar-green"></div></div>
+        <div id="labels"><div id="label-red">!RED - 0</div><div id="label-green">!GREEN - 0</div></div>
     </div>
 
     <script>
         const TWITCH_CHANNEL = 'sedyth'; 
-        const VOTE_TIME_SECONDS = 120;
+        const VOTE_TIME_SECONDS = 15; // Está en 15 segundos para hacer pruebas rápidas
+        
+        // --- ON-SCREEN LOGGER ---
+        const logWindow = document.getElementById('debug-log');
+        logWindow.style.display = 'block'; // Mostrar depuración
+        function printLog(msg) {
+            logWindow.innerHTML += msg + "<br>";
+            console.log(msg); // También lo mandamos a la consola oculta por si acaso
+        }
+
+        if (typeof tmi === 'undefined') {
+            printLog("❌ ERROR: La librería de Twitch no cargó.");
+        } else {
+            printLog("✅ Librería de Twitch cargada.");
+        }
 
         let votesRed = 0; let votesGreen = 0; let timeRemaining = VOTE_TIME_SECONDS;
         let timerInterval; let isVotingActive = false; let voters = new Set();
 
-        const sbWebSocket = new WebSocket('ws://127.0.0.1:8080/');
-        sbWebSocket.onopen = () => console.log("[DEBUG] Successfully connected to Streamer.bot!");
-        sbWebSocket.onerror = (error) => console.log("[DEBUG] Streamer.bot WebSocket error. Is Streamer.bot open and WebSocket server running?", error);
+        // --- CONEXIÓN AL SERVIDOR WEBSOCKET (Estilo Perrito) ---
+        const sbWebSocket = new WebSocket('ws://localhost:8080/');
+        
+        sbWebSocket.onopen = () => printLog("✅ Conectado a Streamer.bot correctamente!");
+        sbWebSocket.onerror = (error) => printLog("❌ Error de Streamer.bot WebSocket! ¿Está encendido?");
 
         function triggerStreamerbot(winner) {
             const actionName = winner === 'Red' ? 'LightsRed' : 'LightsGreen';
-            console.log(`[DEBUG] Attempting to trigger Streamer.bot Action: ${actionName}`);
+            printLog(`Enviando señal a Streamer.bot: ${actionName}...`);
             if (sbWebSocket.readyState === WebSocket.OPEN) {
-                sbWebSocket.send(JSON.stringify({ request: 'DoAction', action: { name: actionName }, id: 'LightVoteWidget' }));
-                console.log(`[DEBUG] Signal sent to Streamer.bot!`);
-            } else {
-                console.log(`[DEBUG] Failed to send to Streamer.bot. WebSocket is closed.`);
+                // Le decimos a Streamer.bot que ejecute la acción
+                sbWebSocket.send(JSON.stringify({ 
+                    request: 'DoAction', 
+                    action: { name: actionName }, 
+                    id: 'LightVoteWidget' 
+                }));
+                printLog(`✅ ¡Señal enviada a Streamer.bot!`);
             }
         }
 
+        // --- CONEXIÓN AL CHAT DE TWITCH ---
         const client = new tmi.Client({ channels: [ TWITCH_CHANNEL ] });
         
         client.on('connected', (address, port) => {
-            console.log(`[DEBUG] Connected to Twitch! Listening to chat for: ${TWITCH_CHANNEL}`);
+            printLog(`✅ Conectado al chat de: ${TWITCH_CHANNEL}`);
         });
 
         client.connect().catch(console.error);
@@ -71,35 +95,26 @@
             const command = message.toLowerCase().trim();
             const username = tags.username;
 
-            console.log(`[DEBUG] Received message from ${username}: "${command}"`);
+            if (command === '!startvote' || command === '!red' || command === '!green') {
+                 printLog(`Mensaje: ${username} -> ${command}`);
+            }
 
             if (command === '!startvote') {
-                console.log(`[DEBUG] !startvote detected! Checking permissions...`);
-                console.log(`[DEBUG] - Is Broadcaster? ${tags.badges?.broadcaster ? 'Yes' : 'No'}`);
-                console.log(`[DEBUG] - Is Mod? ${tags.mod ? 'Yes' : 'No'}`);
-                console.log(`[DEBUG] - Is exact channel match? ${username === TWITCH_CHANNEL ? 'Yes' : 'No'}`);
-
-                // The fix: Added "username === TWITCH_CHANNEL"
                 if (tags.badges?.broadcaster || tags.mod || username === TWITCH_CHANNEL) {
-                    console.log(`[DEBUG] Permission GRANTED. Starting vote UI...`);
+                    printLog(`✅ Votación Iniciada!`);
                     startVote();
                 } else {
-                    console.log(`[DEBUG] Permission DENIED. User is not broadcaster or mod.`);
+                    printLog(`❌ !startvote bloqueado (No eres mod/broadcaster).`);
                 }
                 return;
             }
 
             if (isVotingActive) {
-                if (voters.has(username)) {
-                    console.log(`[DEBUG] User ${username} already voted. Ignoring.`);
-                    return; 
-                }
+                if (voters.has(username)) return;
 
                 if (command === '!red') {
-                    console.log(`[DEBUG] Valid !red vote from ${username}.`);
                     votesRed++; voters.add(username); updateUI();
                 } else if (command === '!green') {
-                    console.log(`[DEBUG] Valid !green vote from ${username}.`);
                     votesGreen++; voters.add(username); updateUI();
                 }
             }
@@ -136,13 +151,11 @@
             let winner = "Tie";
             if (votesRed > votesGreen) winner = "Red"; else if (votesGreen > votesRed) winner = "Green";
 
-            console.log(`[DEBUG] Vote ended! Winner: ${winner}`);
-
             if (winner !== "Tie") {
-                document.getElementById('title').innerText = `${winner.toUpperCase()} WINS!`;
+                document.getElementById('title').innerText = `¡${winner.toUpperCase()} GANA!`;
                 triggerStreamerbot(winner);
             } else {
-                document.getElementById('title').innerText = "IT'S A TIE!";
+                document.getElementById('title').innerText = "¡EMPATE!";
             }
             setTimeout(() => { document.getElementById('widget-container').style.display = 'none'; }, 10000);
         }
