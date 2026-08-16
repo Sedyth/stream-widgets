@@ -26,7 +26,7 @@
 </head>
 <body>
 
-    <div id="debug-log">INICIANDO SISTEMA...<br></div>
+    <div id="debug-log">SYSTEM BOOTING...<br></div>
 
     <div id="widget-container">
         <div id="header"><div id="title">Light Color Vote!</div><div id="timer">02:00</div></div>
@@ -35,130 +35,120 @@
     </div>
 
     <script>
-        // --- CONFIG ---
-        const TWITCH_CHANNEL = 'sedyth'; 
-        const VOTE_TIME_SECONDS = 15; // 15 seconds for testing
-        
-        const logWindow = document.getElementById('debug-log');
-        function printLog(msg) {
-            logWindow.innerHTML += msg + "<br>";
-            console.log(msg);
-        }
-
-        if (typeof tmi === 'undefined') printLog("❌ ERROR: La librería de Twitch no cargó.");
-        else printLog("✅ Librería de Twitch cargada.");
-
-        let votesRed = 0; let votesGreen = 0; let timeRemaining = VOTE_TIME_SECONDS;
-        let timerInterval; let isVotingActive = false; let voters = new Set();
-        let sbWebSocket = null;
-
-        // --- STREAMER.BOT WEBSOCKET WITH AUTO-RECONNECT ---
-        function connectStreamerBot() {
-            sbWebSocket = new WebSocket('ws://localhost:8080/');
+        // THE PERRITO METHOD: Wait for the HTML to fully load before doing anything
+        document.addEventListener('DOMContentLoaded', () => {
             
-            sbWebSocket.onopen = () => {
+            const TWITCH_CHANNEL = 'sedyth'; 
+            const VOTE_TIME_SECONDS = 15; // Set to 15 for fast testing
+            
+            const logWindow = document.getElementById('debug-log');
+            function printLog(msg) {
+                logWindow.innerHTML += msg + "<br>";
+                console.log(msg);
+            }
+
+            if (typeof tmi === 'undefined') printLog("❌ ERROR: Twitch library failed to load.");
+            else printLog("✅ Twitch library loaded.");
+
+            let votesRed = 0; let votesGreen = 0; let timeRemaining = VOTE_TIME_SECONDS;
+            let timerInterval; let isVotingActive = false; let voters = new Set();
+            
+            // --- STREAMER.BOT CONNECTION (Exact Perrito Logic) ---
+            const socket = new WebSocket('ws://localhost:8080/');
+
+            socket.onopen = (event) => {
                 printLog("✅ Conectado a Streamer.bot correctamente!");
             };
-            
-            sbWebSocket.onerror = (error) => {
-                // We keep this quiet so it doesn't spam the screen during reconnects
+
+            socket.onerror = (error) => {
+                printLog("❌ Error de Streamer.bot! (Si estás en Chrome, pruébalo en OBS)");
             };
 
-            sbWebSocket.onclose = () => {
-                printLog("⚠️ Streamer.bot no detectado. Reintentando en 3 segundos...");
-                setTimeout(connectStreamerBot, 3000);
-            };
-        }
-
-        // Start the connection process
-        connectStreamerBot();
-
-        function triggerStreamerbot(winner) {
-            const actionName = winner === 'Red' ? 'LightsRed' : 'LightsGreen';
-            printLog(`Enviando señal a Streamer.bot: ${actionName}...`);
-            if (sbWebSocket && sbWebSocket.readyState === WebSocket.OPEN) {
-                sbWebSocket.send(JSON.stringify({ 
-                    request: 'DoAction', 
-                    action: { name: actionName }, 
-                    id: 'LightVoteWidget' 
-                }));
-                printLog(`✅ ¡Señal enviada a Streamer.bot!`);
-            } else {
-                printLog(`❌ No se pudo enviar. Streamer.bot desconectado.`);
-            }
-        }
-
-        // --- TWITCH CHAT ---
-        const client = new tmi.Client({ channels: [ TWITCH_CHANNEL ] });
-        client.on('connected', () => printLog(`✅ Conectado al chat de: ${TWITCH_CHANNEL}`));
-        client.connect().catch(console.error);
-
-        client.on('message', (channel, tags, message, self) => {
-            const command = message.toLowerCase().trim();
-            const username = tags.username;
-
-            if (command === '!startvote' || command === '!red' || command === '!green') {
-                 printLog(`Mensaje: ${username} -> ${command}`);
-            }
-
-            if (command === '!startvote') {
-                if (tags.badges?.broadcaster || tags.mod || username === TWITCH_CHANNEL) {
-                    printLog(`✅ Votación Iniciada!`);
-                    startVote();
+            function triggerStreamerbot(winner) {
+                const actionName = winner === 'Red' ? 'LightsRed' : 'LightsGreen';
+                printLog(`Enviando señal a Streamer.bot: ${actionName}...`);
+                
+                if (socket && socket.readyState === WebSocket.OPEN) {
+                    const payload = JSON.stringify({ 
+                        request: 'DoAction', 
+                        action: { name: actionName }, 
+                        id: 'LightVoteWidget' 
+                    });
+                    socket.send(payload);
+                    printLog(`✅ ¡Señal enviada a Streamer.bot!`);
                 } else {
-                    printLog(`❌ !startvote bloqueado (No eres mod/broadcaster).`);
+                    printLog(`❌ No se pudo enviar. Streamer.bot desconectado.`);
                 }
-                return;
             }
 
-            if (isVotingActive && !voters.has(username)) {
-                if (command === '!red') {
-                    votesRed++; voters.add(username); updateUI();
-                } else if (command === '!green') {
-                    votesGreen++; voters.add(username); updateUI();
+            // --- TWITCH CHAT CONNECTION ---
+            const client = new tmi.Client({ channels: [ TWITCH_CHANNEL ] });
+            client.on('connected', () => printLog(`✅ Conectado al chat de: ${TWITCH_CHANNEL}`));
+            client.connect().catch(console.error);
+
+            client.on('message', (channel, tags, message, self) => {
+                const command = message.toLowerCase().trim();
+                const username = tags.username;
+
+                if (command === '!startvote') {
+                    if (tags.badges?.broadcaster || tags.mod || username === TWITCH_CHANNEL) {
+                        printLog(`✅ Votación Iniciada!`);
+                        startVote();
+                    } else {
+                        printLog(`❌ !startvote blocked (Not mod/broadcaster).`);
+                    }
+                    return;
                 }
+
+                if (isVotingActive && !voters.has(username)) {
+                    if (command === '!red') {
+                        votesRed++; voters.add(username); updateUI();
+                    } else if (command === '!green') {
+                        votesGreen++; voters.add(username); updateUI();
+                    }
+                }
+            });
+
+            function startVote() {
+                if (isVotingActive) return;
+                votesRed = 0; votesGreen = 0; timeRemaining = VOTE_TIME_SECONDS; voters.clear(); isVotingActive = true;
+                
+                document.getElementById('widget-container').style.display = 'block';
+                document.getElementById('title').innerText = "VOTE NOW!";
+                updateUI();
+
+                timerInterval = setInterval(() => {
+                    timeRemaining--;
+                    const minutes = Math.floor(timeRemaining / 60); const seconds = timeRemaining % 60;
+                    document.getElementById('timer').innerText = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+                    if (timeRemaining <= 0) endVote();
+                }, 1000);
+            }
+
+            function updateUI() {
+                const totalVotes = votesRed + votesGreen;
+                let redPercent = 50; let greenPercent = 50;
+                if (totalVotes > 0) { redPercent = (votesRed / totalVotes) * 100; greenPercent = (votesGreen / totalVotes) * 100; }
+                document.getElementById('bar-red').style.width = `${redPercent}%`;
+                document.getElementById('bar-green').style.width = `${greenPercent}%`;
+                document.getElementById('label-red').innerText = `!RED - ${votesRed}`;
+                document.getElementById('label-green').innerText = `!GREEN - ${votesGreen}`;
+            }
+
+            function endVote() {
+                clearInterval(timerInterval); isVotingActive = false;
+                let winner = "Tie";
+                if (votesRed > votesGreen) winner = "Red"; else if (votesGreen > votesRed) winner = "Green";
+
+                if (winner !== "Tie") {
+                    document.getElementById('title').innerText = `¡${winner.toUpperCase()} GANA!`;
+                    triggerStreamerbot(winner);
+                } else {
+                    document.getElementById('title').innerText = "¡EMPATE!";
+                }
+                setTimeout(() => { document.getElementById('widget-container').style.display = 'none'; }, 10000);
             }
         });
-
-        function startVote() {
-            if (isVotingActive) return;
-            votesRed = 0; votesGreen = 0; timeRemaining = VOTE_TIME_SECONDS; voters.clear(); isVotingActive = true;
-            
-            document.getElementById('widget-container').style.display = 'block';
-            document.getElementById('title').innerText = "VOTE NOW!";
-            updateUI();
-
-            timerInterval = setInterval(() => {
-                timeRemaining--;
-                const minutes = Math.floor(timeRemaining / 60); const seconds = timeRemaining % 60;
-                document.getElementById('timer').innerText = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-                if (timeRemaining <= 0) endVote();
-            }, 1000);
-        }
-
-        function updateUI() {
-            const totalVotes = votesRed + votesGreen;
-            let redPercent = 50; let greenPercent = 50;
-            if (totalVotes > 0) { redPercent = (votesRed / totalVotes) * 100; greenPercent = (votesGreen / totalVotes) * 100; }
-            document.getElementById('bar-red').style.width = `${redPercent}%`;
-            document.getElementById('bar-green').style.width = `${greenPercent}%`;
-            document.getElementById('label-red').innerText = `!RED - ${votesRed}`;
-            document.getElementById('label-green').innerText = `!GREEN - ${votesGreen}`;
-        }
-
-        function endVote() {
-            clearInterval(timerInterval); isVotingActive = false;
-            let winner = "Tie";
-            if (votesRed > votesGreen) winner = "Red"; else if (votesGreen > votesRed) winner = "Green";
-
-            if (winner !== "Tie") {
-                document.getElementById('title').innerText = `¡${winner.toUpperCase()} GANA!`;
-                triggerStreamerbot(winner);
-            } else {
-                document.getElementById('title').innerText = "¡EMPATE!";
-            }
-            setTimeout(() => { document.getElementById('widget-container').style.display = 'none'; }, 10000);
-        }
     </script>
 </body>
 </html>
