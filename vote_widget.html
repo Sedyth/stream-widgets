@@ -11,7 +11,6 @@
         @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@700;900&display=swap');
         body { margin: 0; padding: 20px; font-family: 'Montserrat', sans-serif; color: white; background-color: transparent; text-transform: uppercase; }
         
-        #debug-log { background: rgba(0, 0, 0, 0.9); color: #00ff00; font-family: monospace; font-size: 14px; padding: 10px; border-radius: 5px; width: 600px; margin-bottom: 20px; display: block; text-transform: none; }
         #widget-container { width: 600px; background: rgba(0, 0, 0, 0.7); border-radius: 15px; padding: 20px; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5); display: none; }
         #header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
         #title { font-size: 20px; font-weight: 900; letter-spacing: 2px; }
@@ -26,8 +25,6 @@
 </head>
 <body>
 
-    <div id="debug-log">SYSTEM BOOTING...<br></div>
-
     <div id="widget-container">
         <div id="header"><div id="title">Light Color Vote!</div><div id="timer">02:00</div></div>
         <div id="bar-container"><div id="bar-red"></div><div id="bar-green"></div></div>
@@ -35,38 +32,22 @@
     </div>
 
     <script>
-        // THE PERRITO METHOD: Wait for the HTML to fully load before doing anything
         document.addEventListener('DOMContentLoaded', () => {
             
             const TWITCH_CHANNEL = 'sedyth'; 
-            const VOTE_TIME_SECONDS = 15; // Set to 15 for fast testing
+            const VOTE_TIME_SECONDS = 120; // Set to 2 minutes
             
-            const logWindow = document.getElementById('debug-log');
-            function printLog(msg) {
-                logWindow.innerHTML += msg + "<br>";
-                console.log(msg);
-            }
-
-            if (typeof tmi === 'undefined') printLog("❌ ERROR: Twitch library failed to load.");
-            else printLog("✅ Twitch library loaded.");
-
             let votesRed = 0; let votesGreen = 0; let timeRemaining = VOTE_TIME_SECONDS;
             let timerInterval; let isVotingActive = false; let voters = new Set();
             
-            // --- STREAMER.BOT CONNECTION (Exact Perrito Logic) ---
+            // --- STREAMER.BOT CONNECTION ---
             const socket = new WebSocket('ws://localhost:8080/');
 
-            socket.onopen = (event) => {
-                printLog("✅ Conectado a Streamer.bot correctamente!");
-            };
-
-            socket.onerror = (error) => {
-                printLog("❌ Error de Streamer.bot! (Si estás en Chrome, pruébalo en OBS)");
-            };
+            socket.onopen = (event) => console.log("✅ Conectado a Streamer.bot correctamente!");
+            socket.onerror = (error) => console.log("❌ Error de Streamer.bot!");
 
             function triggerStreamerbot(winner) {
                 const actionName = winner === 'Red' ? 'LightsRed' : 'LightsGreen';
-                printLog(`Enviando señal a Streamer.bot: ${actionName}...`);
                 
                 if (socket && socket.readyState === WebSocket.OPEN) {
                     const payload = JSON.stringify({ 
@@ -75,15 +56,13 @@
                         id: 'LightVoteWidget' 
                     });
                     socket.send(payload);
-                    printLog(`✅ ¡Señal enviada a Streamer.bot!`);
-                } else {
-                    printLog(`❌ No se pudo enviar. Streamer.bot desconectado.`);
+                    console.log(`✅ ¡Señal enviada a Streamer.bot para cambiar a ${winner}!`);
                 }
             }
 
             // --- TWITCH CHAT CONNECTION ---
             const client = new tmi.Client({ channels: [ TWITCH_CHANNEL ] });
-            client.on('connected', () => printLog(`✅ Conectado al chat de: ${TWITCH_CHANNEL}`));
+            client.on('connected', () => console.log(`✅ Conectado al chat de: ${TWITCH_CHANNEL}`));
             client.connect().catch(console.error);
 
             client.on('message', (channel, tags, message, self) => {
@@ -92,10 +71,7 @@
 
                 if (command === '!startvote') {
                     if (tags.badges?.broadcaster || tags.mod || username === TWITCH_CHANNEL) {
-                        printLog(`✅ Votación Iniciada!`);
                         startVote();
-                    } else {
-                        printLog(`❌ !startvote blocked (Not mod/broadcaster).`);
                     }
                     return;
                 }
@@ -146,6 +122,8 @@
                 } else {
                     document.getElementById('title').innerText = "¡EMPATE!";
                 }
+                
+                // Hides the widget entirely 10 seconds after the vote finishes
                 setTimeout(() => { document.getElementById('widget-container').style.display = 'none'; }, 10000);
             }
         });
